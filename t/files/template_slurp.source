@@ -1,0 +1,3 @@
+Hello [% NAME %],
+
+Your balance is $[% BALANCE %].
