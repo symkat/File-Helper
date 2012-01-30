@@ -1,0 +1,8 @@
+[% FIRST %] [% LAST %] is here.
+[% IF FIRST %][% FIRST %][% ENDIF %]
+[% IF FIRST %]
+[% FIRST %] [% LAST %]
+[% ENDIF %]
+[% IF FOOBAR %]
+Hello World
+[% ENDIF %]

@@ -3,8 +3,9 @@ use warnings;
 use strict;
 use File::Copy;
 use 5.008_008;
+$|++;
 
-our $VERSION = "000100"; # 0.1.0;
+our $VERSION = "000102"; # 0.1.2;
 $VERSION = eval $VERSION;
 
 =head1 NAME
@@ -165,6 +166,20 @@ Process a file as a template.  For a file,
 [% KEY %] will be replaced with the value of
 the key, as given in the argument.
 
+Simple non-nested if statements may be used.
+
+[% IF NAME %]Hello, [% NAME %][% ENDIF %]
+
+[% IF USER %]
+Hello [% USER %],
+
+Welcome to the jungle!
+[% ENDIF %]
+
+Tokens that are not recognized will be removed,
+if statements that do not match will not leave
+behind new lines.
+
 my $content = $file->template_slurp(
     {
         ACCOUNT => 102044,
@@ -182,13 +197,62 @@ sub template_slurp {
 
     open my $lf, "<", $self->filename
         or die "Failed to read " . $self->filename . ": $!";
-
-    while ( my $line = <$lf> ) {
-        $line =~ s/\[% (.*?) %\]/$config->{$1}/g;
-        push @return, $line;    
-    }
+    my $content = do { local $/; <$lf> };
     close $lf;
-    return join "", @return;
+    
+    pos($content) = 0;
+    my $str;
+
+    MAIN: while ( pos($content) != length($content) ) {
+        if ( $content =~ /\G\[% IF (.*?) %\]\n?/gc ) {
+            my ( $name )  = $1;
+            if ( exists $config->{$name} ) {
+                while ( pos($content) != length( $content )) {
+                    if ( $content =~ /\G\[% ENDIF %\]/gc ) {
+                        last;
+                    } elsif ( $content =~ /\G\n\[% ENDIF %\]/gc ) {
+                        $str .= "\n";
+                        last;
+                    } elsif ( $content =~ /\G\[% (.*?) %\]/gc) {
+                        my ( $name )  = $1;
+                        if ( exists $config->{$name} ) {
+                            $str .= $config->{$name};
+                        } 
+                    } elsif ( $content =~ /\G(.*?)\[%/sgc ) {
+                        pos($content) = (pos($content) - 2); # Rewind so [% matches later.
+                        my ( $token ) = ( $1 );
+                        $str .= $token;
+                    } else {
+                        parser_error( $content, pos($content), $str );
+                    }
+                }
+            } else {
+                $content =~ /\G.*?\[% ENDIF %\]\n?/sgc;
+                chomp $str if $str; # Remove the newline added by the origional failing if.
+            }
+        } elsif ( $content =~ /\G\[% (.*?) %\]/gc) {
+            my ( $name )  = $1;
+            if ( exists $config->{$name} ) {
+                $str .= $config->{$name};
+            }
+        } elsif ( $content =~ /\G(.*?)\[%/sgc ) {
+            pos($content) = (pos($content) - 2); # Rewind so [% matches later.
+            $str .= $1;
+        } elsif ( $content =~ /\G(.*?)/sgc ) {
+            $str .= $1; # Content until the end of the file.
+        } else {
+            parser_error( $content, pos($content), $str );
+        }
+    }
+    return $str;
+}
+
+sub parser_error {
+    my ( $content, $position, $str ) = @_;
+    die "Parser error:\n" .
+        "Next 10 chars to parse: " . substr( $content, $position, 10 ) . "\n" .
+        "Prev 10 chars parsed  : " . substr( $content, ($position - 10), 10 ) . "\n" .
+        "String constructed to this point: " . ( defined $str ? $str : "*NONE*" );
 }
 
 =head1 AUTHOR
